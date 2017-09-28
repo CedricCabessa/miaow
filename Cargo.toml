@@ -1,0 +1,16 @@
+[package]
+name = "miaow"
+version = "0.1.0"
+authors = ["Cédric Cabessa <ced@ryick.net>"]
+
+[dependencies]
+byteorder = "1.1"
+rand = "0.3"
+
+[lib]
+name = "libmiaow"
+path = "src/lib.rs"
+
+[[bin]]
+name = "miaow"
+path = "src/main.rs"
