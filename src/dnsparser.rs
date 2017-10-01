@@ -25,9 +25,17 @@ impl Resource {
 
         for answer in dns_answers {
             match *answer.get_type() {
-                DnsType::TXT => parse_txt(answer.get_data(), &mut user, &mut file),
-                DnsType::A => parse_a(answer.get_data(), &mut ip),
-                DnsType::SRV => parse_srv(answer.get_data(), &mut port),
+                DnsType::TXT => {
+                    let (f, u) = parse_txt(answer.get_data());
+                    file = f;
+                    user = u;
+                },
+                DnsAnswer::A(data) => {
+                    ip = parse_a(Cursor::new(data))?;
+                }
+                DnsType::SRV => {
+                    port = parse_srv(answer.get_data());
+                }
                 DnsType::PTR => continue,
                 DnsType::UNKNOWN => continue,
             };
@@ -42,21 +50,26 @@ impl Resource {
     }
 }
 
-fn parse_txt(mut data: Iter<u8>, user: &mut String, file: &mut String) {
+fn parse_txt(mut data: Iter<u8>) -> (String, String) {
+    let mut file = String::new();
+    let mut user = String::new();
+
     while let Some(size) = data.next() {
         let mut str = String::with_capacity(*size as usize);
         for _ in 0..*size {
             str.push(*data.next().unwrap() as char);
         }
         if str.starts_with("file=") {
-            *file = str.split_off(5);
+            file = str.split_off(5);
         } else if str.starts_with("user=") {
-            *user = str.split_off(5);
+            user = str.split_off(5);
         }
     }
+    (file, user)
 }
 
-fn parse_a(mut data: Iter<u8>, ip: &mut String) {
+fn parse_a(mut data: Iter<u8>) -> String {
+    let mut ip = String::new();
     write!(
         ip,
         "{}.{}.{}.{}",
@@ -65,12 +78,14 @@ fn parse_a(mut data: Iter<u8>, ip: &mut String) {
         data.next().unwrap(),
         data.next().unwrap()
     ).expect("cannot write");
-
+    ip
 }
 
-fn parse_srv(data: Iter<u8>, port: &mut u16) {
+fn parse_srv(data: Iter<u8>) -> u16 {
+    let port;
     let mut data = data.skip(4);
-    *port = pop_u16(&mut data);
+    port = pop_u16(&mut data);
+    port
 }
 
 #[cfg(test)]
@@ -80,8 +95,7 @@ mod tests {
     #[test]
     fn tst_parse_srv() {
         let v: Vec<u8> = vec![0, 0, 0, 0, 0x1f, 0x90];
-        let mut port = 0;
-        parse_srv(v.iter(), &mut port);
+        let port = parse_srv(v.iter());
         assert_eq!(8080, port);
     }
 
@@ -116,9 +130,7 @@ mod tests {
             0x65,
             0x64,
         ];
-        let mut file = String::new();
-        let mut user = String::new();
-        parse_txt(v.iter(), &mut user, &mut file);
+        let (file, user) = parse_txt(v.iter());
         assert_eq!("path/to/file", file);
         assert_eq!("ced", user);
     }
@@ -126,8 +138,7 @@ mod tests {
     #[test]
     fn tst_parse_a() {
         let v: Vec<u8> = vec![0xc0, 0xa8, 0x01, 0x02];
-        let mut ip = String::new();
-        parse_a(v.iter(), &mut ip);
+        let ip = parse_a(v.iter());
         assert_eq!("192.168.1.2", ip);
     }
 }
