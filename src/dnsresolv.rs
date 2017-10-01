@@ -2,8 +2,6 @@ use std::net::UdpSocket;
 use std::net::Ipv4Addr;
 use std::net::IpAddr;
 use std::net::SocketAddr;
-use std::slice::Iter;
-use std::fmt;
 use rand::random;
 
 use pop_u16;
@@ -119,50 +117,26 @@ where
     Ok(DnsAnswer::new(dnstype, dnsdata))
 }
 
+/// dns result. data can be parsed acording to dns_type.
 #[derive(Debug)]
 #[derive(PartialEq)]
-pub enum DnsType {
-    UNKNOWN,
-    PTR,
-    TXT,
-    A,
-    SRV,
-}
-
-/// dns result. data can be parsed acording to dns_type.
-pub struct DnsAnswer {
-    dns_type: DnsType,
-    data: Vec<u8>,
-}
-
-impl fmt::Debug for DnsAnswer {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "dnsAnswer type: {:?} ", self.dns_type)?;
-        for d in &self.data {
-            write!(f, "{:x}", d)?;
-        }
-        Ok(())
-    }
+pub enum DnsAnswer {
+    UNKNOWN(Vec<u8>),
+    PTR(Vec<u8>),
+    TXT(Vec<u8>),
+    A(Vec<u8>),
+    SRV(Vec<u8>),
 }
 
 impl DnsAnswer {
     fn new(idns_type: u16, data: Vec<u8>) -> DnsAnswer {
-        let dns_type = match idns_type {
-            1 => DnsType::A,
-            12 => DnsType::PTR,
-            16 => DnsType::TXT,
-            33 => DnsType::SRV,
-            _ => DnsType::UNKNOWN,
-        };
-        DnsAnswer { dns_type, data }
-    }
-
-    pub fn get_type(&self) -> &DnsType {
-        &self.dns_type
-    }
-
-    pub fn get_data(&self) -> Iter<u8> {
-        self.data.iter()
+        match idns_type {
+            1 => DnsAnswer::A(data),
+            12 => DnsAnswer::PTR(data),
+            16 => DnsAnswer::TXT(data),
+            33 => DnsAnswer::SRV(data),
+            _ => DnsAnswer::UNKNOWN(data),
+        }
     }
 }
 
@@ -347,35 +321,50 @@ mod tests {
             1,
             answers
                 .iter()
-                .filter(|x| *x.get_type() == DnsType::A)
+                .filter(|x| match **x {
+                    DnsAnswer::A(_) => true,
+                    _ => false,
+                })
                 .count()
         );
         assert_eq!(
             1,
             answers
                 .iter()
-                .filter(|x| *x.get_type() == DnsType::UNKNOWN)
+                .filter(|x| match **x {
+                    DnsAnswer::UNKNOWN(_) => true,
+                    _ => false,
+                })
                 .count()
         ); //AAAA
         assert_eq!(
             1,
             answers
                 .iter()
-                .filter(|x| *x.get_type() == DnsType::SRV)
+                .filter(|x| match **x {
+                    DnsAnswer::SRV(_) => true,
+                    _ => false,
+                })
                 .count()
         );
         assert_eq!(
             1,
             answers
                 .iter()
-                .filter(|x| *x.get_type() == DnsType::TXT)
+                .filter(|x| match **x {
+                    DnsAnswer::TXT(_) => true,
+                    _ => false,
+                })
                 .count()
         );
         assert_eq!(
             1,
             answers
                 .iter()
-                .filter(|x| *x.get_type() == DnsType::PTR)
+                .filter(|x| match **x {
+                    DnsAnswer::PTR(_) => true,
+                    _ => false,
+                })
                 .count()
         );
     }

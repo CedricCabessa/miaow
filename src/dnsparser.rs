@@ -1,5 +1,4 @@
 use dnsresolv::DnsAnswer;
-use dnsresolv::DnsType;
 use std::fmt::Write;
 use std::slice::Iter;
 
@@ -24,20 +23,20 @@ impl Resource {
         let mut port = 0;
 
         for answer in dns_answers {
-            match *answer.get_type() {
-                DnsType::TXT => {
-                    let (f, u) = parse_txt(answer.get_data());
+            match answer {
+                DnsAnswer::TXT(data) => {
+                    let (f, u) = parse_txt(data.iter());
                     file = f;
                     user = u;
                 },
                 DnsAnswer::A(data) => {
                     ip = parse_a(Cursor::new(data))?;
                 }
-                DnsType::SRV => {
-                    port = parse_srv(answer.get_data());
+                DnsAnswer::SRV(data) => {
+                    port = parse_srv(data.iter());
                 }
-                DnsType::PTR => continue,
-                DnsType::UNKNOWN => continue,
+                DnsAnswer::PTR(_) => continue,
+                DnsAnswer::UNKNOWN(_) => continue,
             };
         }
         let resource = Resource {
