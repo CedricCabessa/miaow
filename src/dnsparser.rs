@@ -1,8 +1,9 @@
 use dnsresolv::DnsAnswer;
 use std::fmt::Write;
-use std::slice::Iter;
+use std::io::{Cursor, BufRead};
+use byteorder::{BigEndian, ReadBytesExt};
 
-use pop_u16;
+use DnsError;
 
 #[derive(Debug)]
 /// Informations needed to download a file
@@ -16,7 +17,7 @@ pub struct Resource {
 impl Resource {
     /// given a list of dns answer (PTR request) created by DnsResolv::resolv_ptr(),
     /// create a Resource object to download the file
-    pub fn parse_dns(dns_answers: Vec<DnsAnswer>) -> Result<Resource, &'static str> {
+    pub fn parse_dns(dns_answers: Vec<DnsAnswer>) -> Result<Resource, DnsError> {
         let mut ip = String::new();
         let mut user = String::new();
         let mut file = String::new();
@@ -25,7 +26,7 @@ impl Resource {
         for answer in dns_answers {
             match answer {
                 DnsAnswer::TXT(data) => {
-                    let (f, u) = parse_txt(data.iter());
+                    let (f, u) = parse_txt(Cursor::new(data))?;
                     file = f;
                     user = u;
                 },
@@ -33,12 +34,13 @@ impl Resource {
                     ip = parse_a(Cursor::new(data))?;
                 }
                 DnsAnswer::SRV(data) => {
-                    port = parse_srv(data.iter());
+                    port = parse_srv(Cursor::new(data))?;
                 }
                 DnsAnswer::PTR(_) => continue,
                 DnsAnswer::UNKNOWN(_) => continue,
             };
         }
+
         let resource = Resource {
             ip,
             port,
@@ -49,14 +51,14 @@ impl Resource {
     }
 }
 
-fn parse_txt(mut data: Iter<u8>) -> (String, String) {
+fn parse_txt<T: BufRead>(mut data: T) -> Result<(String, String), DnsError> {
     let mut file = String::new();
     let mut user = String::new();
 
-    while let Some(size) = data.next() {
-        let mut str = String::with_capacity(*size as usize);
-        for _ in 0..*size {
-            str.push(*data.next().unwrap() as char);
+    while let Ok(size) = data.read_u8() {
+        let mut str = String::with_capacity(size as usize);
+        for _ in 0..size {
+            str.push(data.read_u8()? as char);
         }
         if str.starts_with("file=") {
             file = str.split_off(5);
@@ -64,27 +66,25 @@ fn parse_txt(mut data: Iter<u8>) -> (String, String) {
             user = str.split_off(5);
         }
     }
-    (file, user)
+    Ok((file, user))
 }
 
-fn parse_a(mut data: Iter<u8>) -> String {
+fn parse_a<T: BufRead>(mut data: T) -> Result<String, DnsError> {
     let mut ip = String::new();
     write!(
         ip,
         "{}.{}.{}.{}",
-        data.next().unwrap(),
-        data.next().unwrap(),
-        data.next().unwrap(),
-        data.next().unwrap()
-    ).expect("cannot write");
-    ip
+        data.read_u8()?,
+        data.read_u8()?,
+        data.read_u8()?,
+        data.read_u8()?,
+    ).expect("wrong format");
+    Ok(ip)
 }
 
-fn parse_srv(data: Iter<u8>) -> u16 {
-    let port;
-    let mut data = data.skip(4);
-    port = pop_u16(&mut data);
-    port
+fn parse_srv<T: BufRead>(mut data: T) -> Result<u16, DnsError> {
+    data.read_u32::<BigEndian>()?;
+    Ok(data.read_u16::<BigEndian>()?)
 }
 
 #[cfg(test)]
@@ -94,10 +94,9 @@ mod tests {
     #[test]
     fn tst_parse_srv() {
         let v: Vec<u8> = vec![0, 0, 0, 0, 0x1f, 0x90];
-        let port = parse_srv(v.iter());
+        let port = parse_srv(Cursor::new(v)).unwrap();
         assert_eq!(8080, port);
     }
-
     #[test]
     fn tst_parse_txt() {
         let v: Vec<u8> = vec![
@@ -129,7 +128,7 @@ mod tests {
             0x65,
             0x64,
         ];
-        let (file, user) = parse_txt(v.iter());
+        let (file, user) = parse_txt(Cursor::new(v)).unwrap();
         assert_eq!("path/to/file", file);
         assert_eq!("ced", user);
     }
@@ -137,7 +136,7 @@ mod tests {
     #[test]
     fn tst_parse_a() {
         let v: Vec<u8> = vec![0xc0, 0xa8, 0x01, 0x02];
-        let ip = parse_a(v.iter());
+        let ip = parse_a(Cursor::new(v)).unwrap();
         assert_eq!("192.168.1.2", ip);
     }
 }

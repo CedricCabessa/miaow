@@ -1,14 +1,12 @@
+use std::io::{Cursor, BufRead};
 use std::net::UdpSocket;
 use std::net::Ipv4Addr;
 use std::net::IpAddr;
 use std::net::SocketAddr;
+use byteorder::{BigEndian, WriteBytesExt, ReadBytesExt};
 use rand::random;
 
-use pop_u16;
-use pop_u8;
-use push_u16;
-use push_u8;
-use push_str;
+use DnsError;
 
 /// Dns resolver: send dns request
 pub struct DnsResolv {
@@ -25,93 +23,96 @@ impl DnsResolv {
     /// This assume all informations are available using only one PTR request.
     /// It is true while testing with avahi, other implementation might require
     /// multiple dns requests.
-    pub fn resolv_ptr(self, query: &str) -> Result<Vec<DnsAnswer>, &'static str> {
-        let buffer = self.create_buffer(query);
+    pub fn resolv_ptr(self, query: &str) -> Result<Vec<DnsAnswer>, DnsError> {
+        let query_buffer = self.create_query_buffer(query)?;
         let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)), 0);
-        let socket = UdpSocket::bind(addr).expect("couldn't bind");
+        let socket = UdpSocket::bind(addr)?;
         socket
-            .join_multicast_v4(&Ipv4Addr::new(224, 0, 0, 251), &Ipv4Addr::new(0, 0, 0, 0))
-            .unwrap();
+            .join_multicast_v4(&Ipv4Addr::new(224, 0, 0, 251), &Ipv4Addr::new(0, 0, 0, 0))?;
 
         socket
-            .send_to(buffer.as_slice(), "224.0.0.251:5353")
-            .expect("cannot send");
+            .send_to(query_buffer.into_inner().as_slice(), "224.0.0.251:5353")?;
 
         let mut answer_buffer: [u8; 512] = [0; 512];
         //TODO: multiple reply / timeout
-        socket.recv(&mut answer_buffer).expect("read data");
-        self.parse_answers(&answer_buffer)
+        socket.recv(&mut answer_buffer)?;
+        self.parse_answers(Cursor::new(answer_buffer.to_vec()))
     }
 
-    fn create_buffer(&self, host: &str) -> Vec<u8> {
-        let mut buffer: Vec<u8> = Vec::new();
+    fn create_query_buffer(&self, host: &str) -> Result<Cursor<Vec<u8>>, DnsError> {
+        let mut buffer = Cursor::new(Vec::new());
 
-        push_u16(&mut buffer, self.id);
-        push_u16(&mut buffer, 1 << 8); // option: recursive
-        push_u16(&mut buffer, 1); // qcount
-        push_u16(&mut buffer, 0); // ancount
-        push_u16(&mut buffer, 0); // nscount
-        push_u16(&mut buffer, 0); // arcount
+        buffer.write_u16::<BigEndian>(self.id)?;
+        buffer.write_u16::<BigEndian>(1 << 8)?;  // option: recursive
+        buffer.write_u16::<BigEndian>(1)?; // qcount
+        buffer.write_u16::<BigEndian>(0)?; // ancount
+        buffer.write_u16::<BigEndian>(0)?; // nscount
+        buffer.write_u16::<BigEndian>(0)?; // arcount
 
         for label in host.split(".") {
-            push_u8(&mut buffer, label.len() as u8);
-            push_str(&mut buffer, label);
+            buffer.write_u8(label.len() as u8)?;
+            for b in label.bytes() {
+                buffer.write_u8(b)?;
+            }
         }
 
-        push_u8(&mut buffer, 0);
+        buffer.write_u8(0)?;
 
-        push_u16(&mut buffer, 12); // PTR
-        push_u16(&mut buffer, 1); // IN
+        buffer.write_u16::<BigEndian>(12)?; // PTR
+        buffer.write_u16::<BigEndian>(1)?; // IN
 
-        buffer
+        Ok(buffer)
     }
 
-    fn parse_answers(&self, answer_buffer: &[u8]) -> Result<Vec<DnsAnswer>, &'static str> {
+    fn parse_answers<T: BufRead>(&self, mut answer_buffer: T) -> Result<Vec<DnsAnswer>, DnsError> {
         // TODO check header (tc bit, ...)
-        let mut iter = answer_buffer.iter();
-        let id = pop_u16(&mut iter);
+        let id = answer_buffer.read_u16::<BigEndian>()?;
         if id != self.id {
-            return Err("wrong id");
+            return Err(DnsError::InvalidFormat(String::from("wrong id")));
         }
+        answer_buffer.read_u16::<BigEndian>()?; //skip FLAGS
+        answer_buffer.read_u16::<BigEndian>()?; //skip QDCOUNT
 
-        let mut iter = iter.skip(4); //skip FLAGS, QDCOUNT
-        let ancount = pop_u16(&mut iter);
+        let ancount = answer_buffer.read_u16::<BigEndian>()?;
+
         let mut answers: Vec<DnsAnswer> = Vec::with_capacity(ancount as usize);
 
-        let mut iter = iter.skip(4); //skip NSCOUNT, ARCOUNT
-        iter.find(|&&x| x == 0).expect("malformed packet"); // skip QNAME
-        let mut iter = iter.skip(4); // skip QTYPE / QCLASS
+        answer_buffer.read_u16::<BigEndian>()?; //skip NSCOUNT
+        answer_buffer.read_u16::<BigEndian>()?; //skip ARCOUNT
+
+        answer_buffer.read_until(0, &mut Vec::new())?; // skip QNAME
+        answer_buffer.read_u16::<BigEndian>()?; //skip QTYPE
+        answer_buffer.read_u16::<BigEndian>()?; //skip QCLASS
 
         for _ in 0..ancount {
-            let dns_answer = match create_dnsanswer(&mut iter) {
+            let dns_answer = match create_dnsanswer(&mut answer_buffer) {
                 Ok(a) => a,
                 Err(e) => return Err(e),
             };
             answers.push(dns_answer);
         }
-
         Ok(answers)
     }
 }
 
-fn create_dnsanswer<'a, T>(iter: &mut T) -> Result<DnsAnswer, &'static str>
-where
-    T: Iterator<Item = &'a u8>,
-{
-
-    let name = pop_u8(iter);
+fn create_dnsanswer<T: BufRead>(answer_buffer: &mut T) -> Result<DnsAnswer, DnsError> {
+    let name = answer_buffer.read_u8()?;
     if name != 0xc0 {
-        return Err("parser doesn't support non pointer value");
+        return Err(DnsError::InvalidFormat(
+            String::from("parser doesn't support non pointer value")));
     }
-    let mut iter = iter.skip(1); // skip name last byte
-    let dnstype = pop_u16(&mut iter);
 
-    let mut iter = iter.skip(6); // skip CLASS / TTL
+    answer_buffer.read_u8()?; // skip name last byte
+    let dnstype = answer_buffer.read_u16::<BigEndian>()?;
 
-    let rdlength = pop_u16(&mut iter);
+    answer_buffer.read_u16::<BigEndian>()?; // skip CLASS
+    answer_buffer.read_u32::<BigEndian>()?; // skip TTL
+
+    let rdlength = answer_buffer.read_u16::<BigEndian>()?;
     let mut dnsdata: Vec<u8> = Vec::with_capacity(rdlength as usize);
     for _ in 0..rdlength {
-        dnsdata.push(*iter.next().unwrap());
+        let v = answer_buffer.read_u8()?;
+        dnsdata.push(v);
     }
 
     Ok(DnsAnswer::new(dnstype, dnsdata))
@@ -139,7 +140,6 @@ impl DnsAnswer {
         }
     }
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -315,7 +315,7 @@ mod tests {
             0x00,
             0x19,
         ];
-        let answers = resolv.parse_answers(&v).unwrap();
+        let answers = resolv.parse_answers(Cursor::new(v)).unwrap();
         assert_eq!(5, answers.len());
         assert_eq!(
             1,
