@@ -53,8 +53,11 @@ The following steps are:
    to keep listening to response until a valid one is found (or timeout).
  * Client command line: pass username in command line and select the correct dns
    response
- * Server: start with a fake server based on avahi:
- `avahi-publish-service "miaow_1" _http._tcp 8080 file=path/to/file user=ced`
-The http server can be woof itself + bash glue
- * It should be enough to test the client
+ * Test the client
  * Implement the server with Rust
+
+**Server**:
+
+A simple and stupid server is mocked in bash in [server/miaow](server/miaow).
+
+You need `avahi-publish-service` and `woof` in the `PATH`

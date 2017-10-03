@@ -1,0 +1,18 @@
+#!/bin/bash
+
+usage() {
+	cat <<EOF >&2
+miaow share path/to/file
+EOF
+}
+
+if [[ $# != 2 || "$1" != "share" ]]; then
+	usage
+fi
+
+file=$2
+
+avahi-publish-service "miaow" _http._tcp 8080 file=$(basename $file) user=$USER &
+avahi_pid=$!
+woof $file
+kill $avahi_pid
