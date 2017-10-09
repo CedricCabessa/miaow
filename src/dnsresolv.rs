@@ -21,8 +21,7 @@ impl DnsResolv {
     /// resolve a dns query using a PTR request.
     ///
     /// This assume all informations are available using only one PTR request.
-    /// It is true while testing with avahi, other implementation might require
-    /// multiple dns requests.
+    /// RFC6763 12.1: the server should include the SRV / TXT / A data.
     pub fn resolv_ptr(self, query: &str) -> Result<Vec<DnsAnswer>, DnsError> {
         let query_buffer = self.create_query_buffer(query)?;
         let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)), 0);
