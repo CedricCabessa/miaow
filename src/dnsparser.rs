@@ -32,10 +32,10 @@ impl Resource {
                 },
                 DnsAnswer::A(data) => {
                     ip = parse_a(Cursor::new(data))?;
-                }
+                },
                 DnsAnswer::SRV(data) => {
                     port = parse_srv(Cursor::new(data))?;
-                }
+                },
                 DnsAnswer::PTR(_) => continue,
                 DnsAnswer::UNKNOWN(_) => continue,
             };
