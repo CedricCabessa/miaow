@@ -1,5 +1,6 @@
 extern crate byteorder;
 extern crate rand;
+extern crate mio;
 use std::io;
 use std::fmt;
 

@@ -1,10 +1,12 @@
 use std::io::{Cursor, BufRead};
-use std::net::UdpSocket;
 use std::net::Ipv4Addr;
 use std::net::IpAddr;
 use std::net::SocketAddr;
+use std::time;
 use byteorder::{BigEndian, WriteBytesExt, ReadBytesExt};
 use rand::random;
+use mio::{Events, Poll, PollOpt, Ready, Token};
+use mio::net::UdpSocket;
 
 use DnsError;
 
@@ -22,20 +24,42 @@ impl DnsResolv {
     ///
     /// This assume all informations are available using only one PTR request.
     /// RFC6763 12.1: the server should include the SRV / TXT / A data.
-    pub fn resolv_ptr(self, query: &str) -> Result<Vec<DnsAnswer>, DnsError> {
+    pub fn resolv_ptr(&self, query: &str) -> Result<Vec<DnsAnswer>, DnsError> {
         let query_buffer = self.create_query_buffer(query)?;
+
         let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)), 0);
-        let socket = UdpSocket::bind(addr)?;
+        let socket = UdpSocket::bind(&addr)?;
+
         socket
             .join_multicast_v4(&Ipv4Addr::new(224, 0, 0, 251), &Ipv4Addr::new(0, 0, 0, 0))?;
 
         socket
-            .send_to(query_buffer.into_inner().as_slice(), "224.0.0.251:5353")?;
+            .send_to(query_buffer.into_inner().as_slice(),
+                     &SocketAddr::new(IpAddr::V4(Ipv4Addr::new(224, 0, 0, 251)),
+                                      5353))?;
 
         let mut answer_buffer: [u8; 512] = [0; 512];
-        //TODO: multiple reply / timeout
-        socket.recv(&mut answer_buffer)?;
-        self.parse_answers(Cursor::new(answer_buffer.to_vec()))
+
+        let poll = Poll::new()?;
+        poll.register(&socket, Token(0), Ready::readable(), PollOpt::edge())?;
+        let mut events = Events::with_capacity(1024);
+
+        let timeout = time::Duration::from_millis(100);
+        let mut dnsanswers = Vec::new();
+
+        loop {
+            let nbevent = poll.poll(&mut events, Some(timeout))?;
+            if nbevent == 0 {
+                break
+            }
+            for _ in &events {
+                // spurious events?
+                socket.recv(&mut answer_buffer)?;
+                let mut dnsanswer = self.parse_answers(Cursor::new(answer_buffer.to_vec()))?;
+                dnsanswers.append(&mut dnsanswer);
+            }
+        }
+        Ok(dnsanswers)
     }
 
     fn create_query_buffer(&self, host: &str) -> Result<Cursor<Vec<u8>>, DnsError> {
