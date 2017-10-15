@@ -41,7 +41,11 @@ fn fetch(name :&str) {
         match dns.resolv_ptr("_http._tcp.local") {
             Ok(dnslist) => {
                 match Resource::parse_dns(dnslist) {
-                    Ok(resource) => println!("{:?}", resource),
+                    Ok(resource) => {
+                        if resource.user() == name {
+                            println!("{:?}", resource);
+                        }
+                    },
                     Err(err) => match err {
                         DnsError::InvalidResource() => { println!("invalid"); continue},
                         err => println!("{:?}", err),

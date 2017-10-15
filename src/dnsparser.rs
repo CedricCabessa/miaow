@@ -53,6 +53,10 @@ impl Resource {
         };
         Ok(resource)
     }
+
+    pub fn user(&self) -> &String {
+        &self.user
+    }
 }
 
 fn is_miaow<T: BufRead>(mut data: T) -> Result<bool, DnsError> {
