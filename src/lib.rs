@@ -6,6 +6,7 @@ use std::fmt;
 
 pub mod dnsresolv;
 pub mod dnsparser;
+pub mod httpclient;
 
 #[derive(Debug)]
 pub enum DnsError {

@@ -8,6 +8,7 @@ EOF
 
 if [[ $# != 2 || "$1" != "share" ]]; then
 	usage
+	exit 1
 fi
 
 file=$2

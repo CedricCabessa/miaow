@@ -43,21 +43,11 @@ not really interested in new feature (or even feature ;-)) right now.
 
 ## Status
 
-NOT WORKING!
+Alpha
 
-I want to focus on the client first. For now I have mDNS proof of concept.
+Client is basically working, need more error check, retry, etc but you can fetch
+a file.
 
-The following steps are:
-
- * Pool mdns answer and retry: for now only the first response is read. We need
-   to keep listening to response until a valid one is found (or timeout).
- * Client command line: pass username in command line and select the correct dns
-   response
- * Test the client
- * Implement the server with Rust
-
-**Server**:
-
-A simple and stupid server is mocked in bash in [server/miaow](server/miaow).
+The server is mocked in bash in [server/miaow](server/miaow).
 
 You need `avahi-publish-service` and `woof` in the `PATH`

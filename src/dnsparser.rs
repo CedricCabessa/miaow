@@ -8,7 +8,7 @@ use DnsError;
 #[derive(Debug)]
 /// Informations needed to download a file
 pub struct Resource {
-    ip: String,
+    host: String,
     port: u16,
     user: String,
     file: String,
@@ -18,7 +18,7 @@ impl Resource {
     /// given a list of dns answer (PTR request) created by DnsResolv::resolv_ptr(),
     /// create a Resource object to download the file
     pub fn parse_dns(dns_answers: Vec<DnsAnswer>) -> Result<Resource, DnsError> {
-        let mut ip = String::new();
+        let mut host = String::new();
         let mut user = String::new();
         let mut file = String::new();
         let mut port = 0;
@@ -31,7 +31,7 @@ impl Resource {
                     user = u;
                 },
                 DnsAnswer::A(data) => {
-                    ip = parse_a(Cursor::new(data))?;
+                    host = parse_a(Cursor::new(data))?;
                 },
                 DnsAnswer::SRV(data) => {
                     port = parse_srv(Cursor::new(data))?;
@@ -46,7 +46,7 @@ impl Resource {
         }
 
         let resource = Resource {
-            ip,
+            host,
             port,
             user,
             file,
@@ -56,6 +56,18 @@ impl Resource {
 
     pub fn user(&self) -> &String {
         &self.user
+    }
+
+    pub fn host(&self) -> &String {
+        &self.host
+    }
+
+    pub fn port(&self) -> u16 {
+        self.port
+    }
+
+    pub fn file(&self) -> &String {
+        &self.file
     }
 }
 
@@ -95,16 +107,16 @@ fn parse_txt<T: BufRead>(mut data: T) -> Result<(String, String), DnsError> {
 }
 
 fn parse_a<T: BufRead>(mut data: T) -> Result<String, DnsError> {
-    let mut ip = String::new();
+    let mut host = String::new();
     write!(
-        ip,
+        host,
         "{}.{}.{}.{}",
         data.read_u8()?,
         data.read_u8()?,
         data.read_u8()?,
         data.read_u8()?,
     ).expect("wrong format");
-    Ok(ip)
+    Ok(host)
 }
 
 fn parse_srv<T: BufRead>(mut data: T) -> Result<u16, DnsError> {
