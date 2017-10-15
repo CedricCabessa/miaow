@@ -36,7 +36,11 @@ impl Resource {
                 DnsAnswer::SRV(data) => {
                     port = parse_srv(Cursor::new(data))?;
                 },
-                DnsAnswer::PTR(_) => continue,
+                DnsAnswer::PTR(data) => {
+                    if !is_miaow(Cursor::new(data))? {
+                        return Err(DnsError::InvalidResource());
+                    }
+                },
                 DnsAnswer::UNKNOWN(_) => continue,
             };
         }
@@ -49,6 +53,23 @@ impl Resource {
         };
         Ok(resource)
     }
+}
+
+fn is_miaow<T: BufRead>(mut data: T) -> Result<bool, DnsError> {
+    while let Ok(size) = data.read_u8() {
+        let mut str = String::with_capacity(size as usize);
+        for _ in 0..size {
+            if let Ok(c) = data.read_u8() {
+                str.push(c as char);
+            } else {
+                return Ok(false);
+            }
+        }
+        if str.starts_with("miaow") {
+            return Ok(true);
+        }
+    }
+    Ok(false)
 }
 
 fn parse_txt<T: BufRead>(mut data: T) -> Result<(String, String), DnsError> {

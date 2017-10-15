@@ -11,6 +11,7 @@ pub mod dnsparser;
 pub enum DnsError {
     Io(io::Error),
     InvalidFormat(String),
+    InvalidResource(),
 }
 
 impl From<io::Error> for DnsError {
@@ -30,6 +31,7 @@ impl fmt::Display for DnsError {
         match *self {
             DnsError::Io(ref err) => write!(f, "error: {}", err),
             DnsError::InvalidFormat(ref err) => write!(f, "Invalid format: {}", err),
+            DnsError::InvalidResource() => write!(f, "Invalid resource"),
         }
     }
 }
