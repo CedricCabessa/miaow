@@ -7,6 +7,7 @@ authors = ["Cédric Cabessa <ced@ryick.net>"]
 byteorder = "1.1"
 rand = "0.3"
 mio = "0.6"
+docopt = "0.8"
 
 [lib]
 name = "libmiaow"
